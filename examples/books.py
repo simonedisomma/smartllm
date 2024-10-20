@@ -1,71 +1,104 @@
 from smartllm import SmartLLM
 from smartllm.drivers import OpenAIDriver, AnthropicDriver
-from typing import Dict, Any
+from typing import Dict, Any, List
+import logging
+import json
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 openai_llm = SmartLLM(OpenAIDriver("gpt-4"))
 anthropic_llm = SmartLLM(AnthropicDriver("claude-3-sonnet-20240229"))
 
-@openai_llm.configure("Create a high-level structure for a book about {topic}")
+@openai_llm.configure("Create a detailed high-level structure for a book about {topic}. Return the structure as a JSON string.")
 def ideate_book_structure(llm_response: str, topic: str) -> Dict[str, Any]:
-    # Process the LLM response
-    # For demonstration, we'll use a simple structure
-    return {
-        "title": f"The Complete Guide to {topic}",
-        "chapters": ["Introduction", "Chapter 1", "Chapter 2", "Conclusion"]
-    }
+    logger.info(f"Ideating book structure for topic: {topic}")
+    try:
+        structure = json.loads(llm_response)
+        logger.debug(f"Generated book structure: {structure}")
+        return structure
+    except json.JSONDecodeError:
+        logger.error("Failed to parse LLM response as JSON")
+        return {"error": "Failed to generate book structure"}
 
-@anthropic_llm.configure("Improve and expand on the following book structure: {structure}")
+@anthropic_llm.configure("Improve and expand on the following book structure, adding depth and coherence: {structure}. Return the improved structure as a JSON string.")
 def improve_structure(llm_response: str, structure: Dict[str, Any]) -> Dict[str, Any]:
-    # Process the LLM response
-    # For demonstration, we'll add a chapter
-    improved_structure = structure.copy()
-    improved_structure["chapters"].insert(1, "Background")
-    return improved_structure
+    logger.info("Improving book structure")
+    try:
+        improved_structure = json.loads(llm_response)
+        logger.debug(f"Improved book structure: {improved_structure}")
+        return improved_structure
+    except json.JSONDecodeError:
+        logger.error("Failed to parse LLM response as JSON")
+        return structure  # Return original structure if parsing fails
 
-@openai_llm.configure("Create an index for the following book structure: {structure}")
-def create_index(llm_response: str, structure: Dict[str, Any]) -> Dict[str, Any]:
-    # Process the LLM response
-    # For demonstration, we'll use a simple index
-    return {"index": [f"{chapter}: page {i*10}" for i, chapter in enumerate(structure["chapters"])]}
+@openai_llm.configure("Create a detailed index for the following book structure: {structure}. Return the index as a JSON string with page numbers.")
+def create_index(llm_response: str, structure: Dict[str, Any]) -> Dict[str, List[str]]:
+    logger.info("Creating book index")
+    try:
+        index = json.loads(llm_response)
+        logger.debug(f"Generated index: {index}")
+        return index
+    except json.JSONDecodeError:
+        logger.error("Failed to parse LLM response as JSON")
+        return {"index": []}
 
-@openai_llm.configure("Write a detailed chapter for '{chapter}' in the book about {topic}")
-def write_chapter(llm_response: str, chapter: str, topic: str) -> str:
-    # Process the LLM response
-    # For demonstration, we'll use a simple chapter
-    return f"Detailed content for {chapter} about {topic}..."
+@openai_llm.configure("Write a detailed chapter for '{chapter}' in the book about {topic}, covering the following sections: {sections}. Return the content as a JSON string with sections as keys.")
+def write_chapter(llm_response: str, chapter: str, topic: str, sections: List[str]) -> Dict[str, str]:
+    logger.info(f"Writing chapter: {chapter}")
+    try:
+        content = json.loads(llm_response)
+        logger.debug(f"Generated content for chapter {chapter}")
+        return content
+    except json.JSONDecodeError:
+        logger.error(f"Failed to parse LLM response as JSON for chapter: {chapter}")
+        return {"error": f"Failed to generate content for {chapter}"}
 
-@openai_llm.configure("Review the following chapter as an editor: {chapter}")
-def review_chapter(llm_response: str, chapter: str) -> str:
-    # Process the LLM response
-    # For demonstration, we'll use a simple review
-    return f"Editorial review: The chapter '{chapter}' is well-written but could use more examples."
+@anthropic_llm.configure("Critically review the following chapter as an experienced editor: {chapter}. Return the review as a JSON string with 'review' and 'rating' keys.")
+def review_chapter(llm_response: str, chapter: Dict[str, str]) -> Dict[str, Any]:
+    logger.info("Reviewing chapter")
+    try:
+        review = json.loads(llm_response)
+        logger.debug(f"Chapter review: {review}")
+        return review
+    except json.JSONDecodeError:
+        logger.error("Failed to parse LLM response as JSON")
+        return {"review": "Error in review generation", "rating": 0}
 
-@openai_llm.configure("Summarize the following book based on its chapters: {chapters}")
-def summarize_book(llm_response: str, chapters: Dict[str, str]) -> str:
-    # Process the LLM response
-    # For demonstration, we'll use a simple summary
-    return "This book provides a comprehensive overview of the topic, covering various aspects in detail."
+@openai_llm.configure("Provide a comprehensive summary of the following book based on its chapters: {chapters}. Return the summary as a string.")
+def summarize_book(llm_response: str, chapters: Dict[str, Dict[str, Any]]) -> str:
+    logger.info("Summarizing book")
+    summary = llm_response.strip()
+    logger.debug(f"Generated book summary: {summary[:50]}...")
+    return summary
 
-def create_book(topic: str):
-    # Ideate book structure using OpenAI
-    structure = ideate_book_structure(topic)
+def create_book(topic: str) -> Dict[str, Any]:
+    logger.info(f"Creating book on topic: {topic}")
     
-    # Improve structure using Anthropic
+    structure = ideate_book_structure(topic)
+    if "error" in structure:
+        return {"error": "Failed to create book structure"}
+    
     improved_structure = improve_structure(structure)
     
-    # Create index using OpenAI
     index = create_index(improved_structure)
     
-    # Write chapters using OpenAI
     chapters = {}
-    for chapter in improved_structure["chapters"]:
-        content = write_chapter(chapter, topic)
-        review = review_chapter(content)
-        chapters[chapter] = {"content": content, "review": review}
+    for chapter in improved_structure.get("chapters", []):
+        content = write_chapter(chapter["title"], topic, chapter.get("sections", []))
+        if "error" not in content:
+            review = review_chapter(content)
+            chapters[chapter["title"]] = {"content": content, "review": review}
+        else:
+            logger.error(f"Skipping chapter '{chapter['title']}' due to content generation error")
     
-    # Summarize book using OpenAI
+    if not chapters:
+        return {"error": "Failed to generate any chapters"}
+    
     summary = summarize_book(chapters)
     
+    logger.info("Book creation completed")
     return {
         "structure": improved_structure,
         "index": index,
