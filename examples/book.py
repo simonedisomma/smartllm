@@ -6,6 +6,7 @@ from typing import Dict, Any, List
 from pydantic import BaseModel, Field
 from tenacity import retry, stop_after_attempt, wait_exponential
 from smartllm import SmartLLM
+from collections import defaultdict
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)  # Changed to DEBUG level
@@ -34,6 +35,10 @@ class GlobalOutline(BaseModel):
 
 class TerminologyGlossary(BaseModel):
     glossary: Dict[str, str] = Field(description="Terminology glossary for the book")
+
+class ContentPlan(BaseModel):
+    chapter_topics: Dict[str, List[str]] = Field(description="Detailed topics for each chapter")
+    topic_distribution: Dict[str, List[str]] = Field(description="Distribution of topics across chapters")
 
 @openai_llm.configure("Create a detailed high-level structure for a book about {topic}. Include a title and a list of up to 10 chapters with their main points. Each chapter should be brief enough to fit on one page.")
 def ideate_book_structure(llm_response: BookStructure, topic: str) -> Dict[str, Any]:
@@ -106,6 +111,16 @@ def perform_final_consistency_check(llm_response: str, chapters: Dict[str, Dict[
     logger.debug("Performing final consistency check")
     return llm_response.strip()
 
+@openai_llm.configure("Compare the following two chapters and rewrite them to reduce overlap and improve flow. Ensure key concepts are preserved while eliminating repetition:\n\nChapter 1:\n{chapter1}\n\nChapter 2:\n{chapter2}")
+def smooth_chapters(llm_response: Dict[str, str], chapter1: str, chapter2: str) -> Dict[str, str]:
+    logger.debug("Smoothing chapters to reduce overlap")
+    return llm_response
+
+@openai_llm.configure("Create a detailed content plan for a book about {topic} with the following structure: {structure}. For each chapter, provide a list of specific topics to cover. Then, create a topic distribution showing which chapters each major topic appears in. Ensure topics are well-distributed and avoid unnecessary repetition.")
+def create_content_plan(llm_response: ContentPlan, topic: str, structure: Dict[str, Any]) -> Dict[str, Any]:
+    logger.debug(f"Creating content plan for topic: {topic}")
+    return llm_response.model_dump()
+
 def create_book(topic: str) -> Dict[str, Any]:
     try:
         logger.debug(f"Creating book on topic: {topic}")
@@ -119,6 +134,10 @@ def create_book(topic: str) -> Dict[str, Any]:
         if not isinstance(improved_structure, dict) or 'chapters' not in improved_structure:
             logger.error(f"Invalid improved structure: {improved_structure}")
             raise ValueError("Invalid book structure returned")
+        
+        # Create a detailed content plan
+        content_plan = openai_llm.create_content_plan(topic=topic, structure=improved_structure, response_format=ContentPlan)
+        logger.debug(f"Content plan created: {content_plan}")
         
         style_guide = openai_llm.create_style_guide(topic=topic, structure=improved_structure, response_format=StyleGuide)
         global_outline = openai_llm.initialize_global_outline(structure=improved_structure, response_format=GlobalOutline)
@@ -134,6 +153,9 @@ def create_book(topic: str) -> Dict[str, Any]:
                 logger.error(f"Chapter {i} is missing 'title': {chapter}")
                 chapter['title'] = f"Chapter {i}"  # Assign a default title
             
+            # Use the content plan to get specific topics for this chapter
+            chapter_topics = content_plan['chapter_topics'].get(chapter['title'], [])
+            
             global_outline = openai_llm.review_global_outline(global_outline=global_outline, current_chapter=chapter, response_format=GlobalOutline)
             
             start_time = time.time()
@@ -142,7 +164,7 @@ def create_book(topic: str) -> Dict[str, Any]:
                     write_chapter,
                     chapter=chapter["title"],
                     topic=topic,
-                    points=chapter.get("main_points", []),
+                    points=chapter_topics,  # Use the specific topics from the content plan
                     style_guide=style_guide,
                     global_outline=global_outline,
                     previous_chapter=previous_chapter if previous_chapter else "",
@@ -158,7 +180,7 @@ def create_book(topic: str) -> Dict[str, Any]:
                 content = openai_llm.write_chapter(
                     chapter=chapter["title"],
                     topic=topic,
-                    points=chapter.get("main_points", []),
+                    points=chapter_topics,  # Use the specific topics from the content plan
                     response_format=ChapterContent
                 )
             end_time = time.time()
@@ -181,6 +203,16 @@ def create_book(topic: str) -> Dict[str, Any]:
             terminology_glossary = openai_llm.update_terminology_glossary(glossary=terminology_glossary, new_chapter=rewritten_content, response_format=TerminologyGlossary)
             rewritten_content = openai_llm.add_inter_chapter_references(content=rewritten_content, global_outline=global_outline, response_format=ChapterContent)
             
+            if previous_chapter:
+                # Smooth the current chapter with the previous one
+                smoothed_chapters = openai_llm.smooth_chapters(
+                    chapter1=previous_chapter,
+                    chapter2=rewritten_content
+                )
+                # Update both the previous and current chapter
+                chapters[list(chapters.keys())[-1]]["content"] = smoothed_chapters["chapter1"]
+                rewritten_content = smoothed_chapters["chapter2"]
+
             chapters[chapter["title"]] = {"content": rewritten_content, "review": review}
             previous_chapter = rewritten_content
             
@@ -188,6 +220,16 @@ def create_book(topic: str) -> Dict[str, Any]:
             with open(f"book/chapter_{i:02d}.md", "w") as f:
                 f.write(f"# {chapter['title']}\n\n{rewritten_content}")
         
+        # After all chapters are written, do a final smoothing pass
+        chapter_titles = list(chapters.keys())
+        for i in range(len(chapter_titles) - 1):
+            smoothed_chapters = openai_llm.smooth_chapters(
+                chapter1=chapters[chapter_titles[i]]["content"],
+                chapter2=chapters[chapter_titles[i+1]]["content"]
+            )
+            chapters[chapter_titles[i]]["content"] = smoothed_chapters["chapter1"]
+            chapters[chapter_titles[i+1]]["content"] = smoothed_chapters["chapter2"]
+
         summary = openai_llm.summarize_book(chapters=chapters)
         final_consistency_check = openai_llm.perform_final_consistency_check(
             chapters=chapters,
@@ -199,6 +241,7 @@ def create_book(topic: str) -> Dict[str, Any]:
         logger.debug("Book creation completed")
         return {
             "structure": improved_structure,
+            "content_plan": content_plan,
             "chapters": chapters,
             "summary": summary,
             "style_guide": style_guide,

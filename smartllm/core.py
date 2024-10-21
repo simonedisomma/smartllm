@@ -2,10 +2,11 @@ import functools
 import inspect
 import logging
 from pydantic import BaseModel
-from typing import Callable, Optional, Dict, List, Union, Type
+from typing import Callable, Optional, Dict, List, Union, Type, Any
 from .drivers.base import LLMDriver
 from .driver_factory import DriverFactory
 from .visualization import graph
+from .drivers import OpenAIDriver, AnthropicDriver
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +16,7 @@ class SmartLLM:
         self.driver = DriverFactory.create(provider_id, model_id)
         self.functions: Dict[str, Callable] = {}
         self.function_calls: Dict[str, List[str]] = {}
-        logger.debug("SmartLLM initialized successfully")
+        
         logger.debug(f"SmartLLM instance created with {provider_id} provider and {model_id} model")
 
     def configure(self, prompt: str, **kwargs):
@@ -33,7 +34,7 @@ class SmartLLM:
                 logger.debug(f"Formatted prompt: {formatted_prompt}")
                 
                 # Generate the response
-                logger.debug("Generating response from driver")
+                
                 result = self.driver.generate(formatted_prompt, response_format=response_format, **kwargs)
                 logger.debug(f"Generated result: {result}")
                 
@@ -72,7 +73,10 @@ class SmartLLM:
         logger.error(f"Attribute not found: {name}")
         raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
 
-    def generate(self, prompt: str, response_format: Optional[Union[Type[BaseModel], str]] = None, **kwargs) -> str:
+    def generate(self, prompt: str, response_format: Union[Type[BaseModel], str, None] = None, **kwargs) -> Union[str, dict]:
+        if not prompt:
+            raise ValueError("Empty prompt provided")
+        
         logger.debug(f"Generating response for prompt: {prompt}")
         if not prompt.strip():
             logger.error("Empty prompt provided")
@@ -107,3 +111,12 @@ class SmartLLM:
             elif name not in ['llm_response', '_caller', 'response_format']:
                 raise ValueError(f"Missing required parameter: {name}")
         return valid_params
+
+    def _validate_json_response(self, response: str, response_format: Type[BaseModel]) -> Dict[str, Any]:
+        try:
+            # Attempt to parse the response as JSON
+            parsed_response = response_format.parse_raw(response)
+            return parsed_response.dict()
+        except Exception as e:
+            logger.error(f"Failed to validate JSON response: {e}")
+            raise ValueError(f"Invalid JSON response from LLM: {str(e)}")
