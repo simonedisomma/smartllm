@@ -1,5 +1,4 @@
 from smartllm import SmartLLM
-from smartllm.drivers import OpenAIDriver
 from typing import List, Dict
 import logging
 from pydantic import BaseModel, Field
@@ -18,52 +17,22 @@ class SlideContent(BaseModel):
 
 @llm.configure("Create a concise outline for a presentation about tokenizers in natural language processing. Limit to 5-7 main points.")
 def create_outline(llm_response: OutlineResponse, **kwargs) -> List[str]:
-    if isinstance(llm_response, OutlineResponse):
-        return llm_response.outline[:7]  # Limit to 7 items max
-    elif isinstance(llm_response, str):
-        logger.warning(f"Received string response instead of OutlineResponse: {llm_response}")
-        try:
-            # Attempt to parse the string as JSON
-            import json
-            parsed = json.loads(llm_response)
-            if isinstance(parsed, dict):
-                for key in parsed.keys():
-                    if 'outline' in key.lower() or 'presentation' in key.lower():
-                        return parsed[key][:7]
-        except json.JSONDecodeError:
-            logger.error(f"Failed to parse string response as JSON: {llm_response}")
-    logger.error(f"Unexpected response type in create_outline: {type(llm_response)}")
-    return []
+    return llm_response.outline[:7]  # Limit to 7 items max
 
 @llm.configure("Generate brief, informative content (2-3 sentences) for a slide titled '{slide_title}' about tokenizers.")
 def generate_slide_content(llm_response: SlideContent, slide_title: str, **kwargs) -> str:
-    if isinstance(llm_response, SlideContent):
-        return llm_response.content.strip()
-    elif isinstance(llm_response, str):
-        logger.warning(f"Received string response instead of SlideContent: {llm_response}")
-        try:
-            # Attempt to parse the string as JSON
-            import json
-            parsed = json.loads(llm_response)
-            if isinstance(parsed, dict):
-                for key in parsed.keys():
-                    if 'content' in key.lower():
-                        return parsed[key].strip()
-        except json.JSONDecodeError:
-            logger.error(f"Failed to parse string response as JSON: {llm_response}")
-    logger.error(f"Unexpected response type in generate_slide_content: {type(llm_response)}")
-    return "Content generation failed. Please try again."
+    return llm_response.content.strip()
 
 def create_presentation() -> List[Dict[str, str]]:
     try:
-        outline = llm.create_outline(_caller='create_presentation', response_format=OutlineResponse)
+        outline = llm.create_outline(response_format=OutlineResponse)
         if not outline:
             logger.warning("Failed to create outline. Returning empty presentation.")
             return []
 
         slides = []
         for slide_title in outline:
-            content = llm.generate_slide_content(slide_title=slide_title, _caller='create_presentation', response_format=SlideContent)
+            content = llm.generate_slide_content(slide_title=slide_title, response_format=SlideContent)
             slides.append({"title": slide_title, "content": content})
         return slides
     except Exception as e:

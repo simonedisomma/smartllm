@@ -1,6 +1,7 @@
 import unittest
 import os
 from smartllm import SmartLLM
+from pydantic import BaseModel, Field
 
 class TestSmartLLM(unittest.TestCase):
     @classmethod
@@ -18,11 +19,14 @@ class TestSmartLLM(unittest.TestCase):
         self.assertIn("Bonjour", response)
 
     def test_configure_decorator(self):
-        @self.openai_llm.configure("Greet {name} in Italian")
-        def greet(llm_response: str, name: str) -> str:
-            return f"LLM says: {llm_response}"
+        class GreetingResponse(BaseModel):
+            greeting: str = Field(description="Greeting in Italian")
 
-        result = greet(name="Alice")
+        @self.openai_llm.configure("Greet {name} in Italian")
+        def greet(llm_response: GreetingResponse, name: str) -> str:
+            return f"LLM says: {llm_response.greeting}"
+
+        result = greet(name="Alice", response_format=GreetingResponse)
         self.assertIsInstance(result, str)
         self.assertTrue(result.startswith("LLM says:"))
         self.assertIn("Ciao", result)

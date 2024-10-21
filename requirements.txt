@@ -3,5 +3,5 @@ matplotlib
 openai>=1.0.0
 anthropic
 pydantic
-
+tenacity
 

@@ -1,63 +1,59 @@
 from smartllm import SmartLLM
 from typing import Dict, Any, List
+from pydantic import BaseModel, Field
 
 openai_llm = SmartLLM("openai", "gpt-4")
 anthropic_llm = SmartLLM("anthropic", "claude-3-sonnet-20240229")
 
+class TopicList(BaseModel):
+    topics: List[str] = Field(description="List of trending topics")
+
+class BlogOutline(BaseModel):
+    title: str = Field(description="Blog post title")
+    sections: List[str] = Field(description="List of blog post sections")
+
+class BlogSection(BaseModel):
+    content: str = Field(description="Content of the blog section")
+
+class TitleList(BaseModel):
+    titles: List[str] = Field(description="List of catchy titles")
+
 @openai_llm.configure("Generate a list of 5 trending topics for blog posts about {subject}")
-def generate_topics(llm_response: str, subject: str) -> List[str]:
-    # Process the LLM response
-    topics = llm_response.split('\n')
-    return [topic.strip() for topic in topics if topic.strip()]
+def generate_topics(llm_response: TopicList, subject: str) -> List[str]:
+    return llm_response.topics
 
 @anthropic_llm.configure("Create an outline for a blog post about '{topic}'")
-def create_outline(llm_response: str, topic: str) -> Dict[str, Any]:
-    # Process the LLM response
-    # For demonstration, we'll use a simple outline structure
-    return {
-        "title": topic,
-        "sections": ["Introduction", "Main Point 1", "Main Point 2", "Main Point 3", "Conclusion"]
-    }
+def create_outline(llm_response: BlogOutline, topic: str) -> Dict[str, Any]:
+    return llm_response.model_dump()
 
 @openai_llm.configure("Write a detailed section for '{section}' in the blog post about {topic}")
-def write_section(llm_response: str, section: str, topic: str) -> str:
-    # Process the LLM response
-    return llm_response.strip()
+def write_section(llm_response: BlogSection, section: str, topic: str) -> str:
+    return llm_response.content
 
 @anthropic_llm.configure("Review and improve the following blog post section: {section}")
-def review_section(llm_response: str, section: str) -> str:
-    # Process the LLM response
-    return llm_response.strip()
+def review_section(llm_response: BlogSection, section: str) -> str:
+    return llm_response.content
 
 @openai_llm.configure("Generate 3 catchy titles for a blog post about {topic}")
-def generate_titles(llm_response: str, topic: str) -> List[str]:
-    # Process the LLM response
-    titles = llm_response.split('\n')
-    return [title.strip() for title in titles if title.strip()]
+def generate_titles(llm_response: TitleList, topic: str) -> List[str]:
+    return llm_response.titles
 
 def create_blog_post(subject: str):
-    # Generate topics
-    topics = generate_topics(subject)
-    
-    # Select a topic (for this example, we'll use the first one)
+    topics = openai_llm.generate_topics(subject=subject, response_format=TopicList)
     selected_topic = topics[0]
     
-    # Create outline
-    outline = create_outline(selected_topic)
+    outline = anthropic_llm.create_outline(topic=selected_topic, response_format=BlogOutline)
     
-    # Write sections
     sections = {}
     for section in outline["sections"]:
-        content = write_section(section, selected_topic)
-        improved_content = review_section(content)
+        content = openai_llm.write_section(section=section, topic=selected_topic, response_format=BlogSection)
+        improved_content = anthropic_llm.review_section(section=content, response_format=BlogSection)
         sections[section] = improved_content
     
-    # Generate titles
-    titles = generate_titles(selected_topic)
+    titles = openai_llm.generate_titles(topic=selected_topic, response_format=TitleList)
     
-    # Compile the blog post
     blog_post = {
-        "title": titles[0],  # Choose the first title
+        "title": titles[0],
         "topic": selected_topic,
         "outline": outline,
         "content": sections,
