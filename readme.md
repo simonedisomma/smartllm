@@ -40,3 +40,11 @@ from smartllm.functions import create_book
 book = create_book("Artificial Intelligence")
 print(book)
 ```
+
+## Run tests (example)
+
+```bash
+python -m unittest tests/simple_test.py
+```
+
+Other tests are available in the `tests` folder.

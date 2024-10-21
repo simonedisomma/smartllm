@@ -1,18 +1,20 @@
 from typing import Dict, Type
 from .drivers.base import LLMDriver
 from .drivers import OpenAIDriver
+from .drivers import AnthropicDriver
 
 class DriverFactory:
     _drivers: Dict[str, Type[LLMDriver]] = {
-        "openai": OpenAIDriver
+        "openai": OpenAIDriver,
+        "anthropic": AnthropicDriver
     }
 
     @classmethod
-    def create(cls, driver_name: str, *args, **kwargs) -> LLMDriver:
-        driver_class = cls._drivers.get(driver_name.lower())
+    def create(cls, provider_id: str, model_id: str, *args, **kwargs) -> LLMDriver:
+        driver_class = cls._drivers.get(provider_id.lower())
         if driver_class is None:
-            raise ValueError(f"Unknown driver: {driver_name}")
-        return driver_class(*args, **kwargs)
+            raise ValueError(f"Unknown driver: {provider_id}")
+        return driver_class(model_id, *args, **kwargs)
 
     @classmethod
     def register_driver(cls, name: str, driver_class: Type[LLMDriver]):

@@ -8,8 +8,8 @@ import json
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-openai_llm = SmartLLM(OpenAIDriver("gpt-4"))
-anthropic_llm = SmartLLM(AnthropicDriver("claude-3-sonnet-20240229"))
+openai_llm = SmartLLM(provider_id="openai", model_id="gpt-4o")
+anthropic_llm = SmartLLM(provider_id="anthropic", model_id="claude-3-sonnet-20240229")
 
 @openai_llm.configure("Create a detailed high-level structure for a book about {topic}. Return the structure as a JSON string.")
 def ideate_book_structure(llm_response: str, topic: str) -> Dict[str, Any]:

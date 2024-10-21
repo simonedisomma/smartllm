@@ -1,9 +1,8 @@
 from smartllm import SmartLLM
-from smartllm.drivers import OpenAIDriver, AnthropicDriver
-from typing import Dict, Any
+from typing import Dict, Any, List
 
-openai_llm = SmartLLM(OpenAIDriver("gpt-4"))
-anthropic_llm = SmartLLM(AnthropicDriver("claude-3-sonnet-20240229"))
+openai_llm = SmartLLM("openai", "gpt-4")
+anthropic_llm = SmartLLM("anthropic", "claude-3-sonnet-20240229")
 
 @openai_llm.configure("Generate a list of 5 trending topics for blog posts about {subject}")
 def generate_topics(llm_response: str, subject: str) -> List[str]:
